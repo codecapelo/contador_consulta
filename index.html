@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Painel de Consultas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <div class="bg-orb orb-1"></div>
+    <div class="bg-orb orb-2"></div>
+
+    <section id="auth-screen" class="auth-screen">
+      <article class="auth-card">
+        <p class="eyebrow">Acesso</p>
+        <h1>Painel de Consultas</h1>
+        <p class="subtitle">Acesse com e-mail para gerir atendimentos e produtividade.</p>
+
+        <p class="auth-role-label">Você é:</p>
+        <div class="auth-role-tabs">
+          <button id="auth-doctor-tab" class="auth-role-btn active" type="button">Sou médico</button>
+        </div>
+
+        <div class="auth-grid">
+          <form id="login-form" class="auth-form">
+            <label>
+              E-mail
+              <input id="login-email" type="email" required />
+            </label>
+            <label>
+              Senha
+              <input id="login-password" type="password" required />
+            </label>
+            <button type="submit" class="auth-submit-btn">Entrar com Email</button>
+            <p class="auth-switch-row">
+              Não tem uma conta?
+              <button id="show-register-btn" class="auth-switch-btn" type="button">Cadastro</button>
+            </p>
+          </form>
+
+          <form id="register-form" class="auth-form hidden">
+            <label>
+              E-mail
+              <input id="register-email" type="email" required />
+            </label>
+            <label>
+              Senha
+              <input id="register-password" type="password" minlength="6" required />
+            </label>
+            <button type="submit" class="auth-submit-btn">Cadastrar com Email</button>
+            <p class="auth-switch-row">
+              Já tem login?
+              <button id="show-login-btn" class="auth-switch-btn" type="button">Voltar para login</button>
+            </p>
+          </form>
+        </div>
+        <p id="auth-message" class="metric-hint"></p>
+      </article>
+    </section>
+
+    <main id="app-shell" class="app-shell hidden">
+      <header class="hero">
+        <div class="session-bar">
+          <p id="session-user-label"></p>
+          <button id="logout-btn" class="ghost" type="button">Sair</button>
+        </div>
+        <div>
+          <p class="eyebrow">Painel diário</p>
+          <h1>Controle de atendimentos e faturamento</h1>
+          <p class="subtitle">
+            Clique para registrar consulta com horário, acompanhar a média do dia e analisar
+            produtividade por período.
+          </p>
+        </div>
+      </header>
+
+      <section class="actions card">
+        <h2>Registrar consulta</h2>
+        <div class="btn-grid">
+          <button class="type-btn adulto" data-type="adulto">Adulto (+R$ 15)</button>
+          <button class="type-btn pediatria" data-type="pediatria">Pediatria (+R$ 20)</button>
+          <button class="type-btn one" data-type="one">One (+R$ 20)</button>
+          <button class="type-btn plantao" data-type="plantao">Plantão (+R$ 20)</button>
+        </div>
+        <div class="action-row">
+          <button id="undo-btn" class="ghost">Desfazer último do dia selecionado</button>
+          <div class="settings-row">
+            <label class="target-hours">
+              Jornada alvo (h)
+              <input id="target-hours" type="number" min="1" max="24" step="0.5" />
+            </label>
+            <label class="target-hours">
+              Pausa acima de (min)
+              <input id="pause-threshold" type="number" min="1" max="240" step="1" />
+            </label>
+          </div>
+        </div>
+        <details class="manual-box">
+          <summary>Adicionar atendimento manual</summary>
+          <form id="manual-form" class="manual-form">
+            <label>
+              Data
+              <input id="manual-date" type="date" required />
+            </label>
+            <label>
+              Hora
+              <input id="manual-time" type="time" required />
+            </label>
+            <label>
+              Tipo
+              <select id="manual-type" required>
+                <option value="adulto">Adulto</option>
+                <option value="pediatria">Pediatria</option>
+                <option value="one">One</option>
+                <option value="plantao">Plantão</option>
+              </select>
+            </label>
+            <button type="submit" class="ghost">Salvar manual</button>
+          </form>
+        </details>
+      </section>
+
+      <section class="metrics-grid">
+        <article class="metric card">
+          <p class="metric-label">Data selecionada</p>
+          <p id="selected-date-label" class="metric-value"></p>
+        </article>
+        <article class="metric card">
+          <p class="metric-label">Total de atendimentos</p>
+          <p id="total-count" class="metric-value"></p>
+        </article>
+        <article class="metric card">
+          <p class="metric-label">Faturamento do dia</p>
+          <p id="total-revenue" class="metric-value"></p>
+        </article>
+        <article
+          id="gross-revenue-per-hour-card"
+          class="metric card metric-clickable"
+          role="button"
+          tabindex="0"
+        >
+          <p class="metric-label">R$/hora bruta (clock time)</p>
+          <p id="gross-revenue-per-hour" class="metric-value"></p>
+          <p class="metric-hint">Clique para ver evolução por horário</p>
+        </article>
+        <article
+          id="gross-consults-per-hour-card"
+          class="metric card metric-clickable"
+          role="button"
+          tabindex="0"
+        >
+          <p class="metric-label">Atendimentos/hora bruta</p>
+          <p id="gross-consults-per-hour" class="metric-value"></p>
+          <p class="metric-hint">Clique para ver evolução por horário</p>
+        </article>
+        <article
+          id="net-revenue-per-hour-card"
+          class="metric card metric-clickable"
+          role="button"
+          tabindex="0"
+        >
+          <p class="metric-label">R$/hora líquida (active time)</p>
+          <p id="net-revenue-per-hour" class="metric-value"></p>
+          <p class="metric-hint">Clique para ver evolução por horário</p>
+        </article>
+        <article
+          id="net-consults-per-hour-card"
+          class="metric card metric-clickable"
+          role="button"
+          tabindex="0"
+        >
+          <p class="metric-label">Atendimentos/hora líquida</p>
+          <p id="net-consults-per-hour" class="metric-value"></p>
+          <p class="metric-hint">Clique para ver evolução por horário</p>
+        </article>
+        <article class="metric card">
+          <p class="metric-label">Taxa de ocupação (utilization)</p>
+          <p id="utilization-rate" class="metric-value"></p>
+          <p class="metric-hint">Percentual do tempo total que foi tempo ativo (sem pausas longas).</p>
+        </article>
+        <article class="metric card">
+          <p class="metric-label">Tempos do dia</p>
+          <div class="time-pair">
+            <div class="time-block">
+              <p class="metric-sub-label">Tempo total (h)</p>
+              <p id="clock-time-hours" class="metric-value metric-compact"></p>
+            </div>
+            <div class="time-block">
+              <p class="metric-sub-label">Tempo ativo (h)</p>
+              <p id="active-time-hours" class="metric-value metric-compact"></p>
+            </div>
+          </div>
+        </article>
+        <article class="metric card">
+          <p class="metric-label">Estimativa no fim da jornada</p>
+          <p id="estimated-revenue" class="metric-value"></p>
+        </article>
+      </section>
+
+      <section class="split-layout">
+        <article class="card">
+          <div class="card-head">
+            <h2>Detalhe do dia</h2>
+            <p id="type-breakdown"></p>
+          </div>
+          <canvas id="day-chart" height="180"></canvas>
+          <h3>Intervalos e pausas</h3>
+          <ul id="interval-stats" class="stats-list"></ul>
+          <ul id="pause-stats" class="stats-list"></ul>
+          <h3>Registros do dia</h3>
+          <ul id="day-list" class="day-list"></ul>
+        </article>
+
+        <article class="card">
+          <div class="calendar-head">
+            <button id="prev-month" class="ghost">◀</button>
+            <h2 id="calendar-title"></h2>
+            <button id="next-month" class="ghost">▶</button>
+          </div>
+          <div class="weekdays">
+            <span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span
+            ><span>Dom</span>
+          </div>
+          <div id="calendar-grid" class="calendar-grid"></div>
+          <section class="month-goal-panel">
+            <h3 id="month-goal-title">Meta do mês</h3>
+            <label class="target-hours month-goal-input-wrap">
+              <span id="monthly-target-label">Meta do mês (R$)</span>
+              <input id="monthly-target" type="number" min="0" step="50" />
+            </label>
+            <div class="month-goal-grid">
+              <article class="month-goal-card">
+                <p class="metric-label">Meta do mês</p>
+                <p id="month-goal-value" class="metric-value"></p>
+                <p id="month-goal-achieved" class="metric-hint"></p>
+              </article>
+              <article class="month-goal-card">
+                <p class="metric-label">Falta para meta do mês</p>
+                <p id="month-goal-remaining" class="metric-value"></p>
+                <p id="month-goal-progress" class="metric-hint"></p>
+              </article>
+            </div>
+          </section>
+        </article>
+      </section>
+
+      <section class="charts-row">
+        <article class="card">
+          <h2>Semana (produtividade e ganho)</h2>
+          <canvas id="week-chart" height="140"></canvas>
+        </article>
+        <article class="card">
+          <h2>Mês (produtividade e ganho)</h2>
+          <canvas id="month-chart" height="140"></canvas>
+        </article>
+      </section>
+
+      <details id="admin-panel" class="card admin-collapsible hidden">
+        <summary>
+          <h2>Painel do administrador</h2>
+        </summary>
+        <p id="admin-month-label" class="metric-hint"></p>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Usuário</th>
+                <th>Perfil</th>
+                <th>Atendimentos</th>
+                <th>Receita</th>
+                <th>Dias ativos</th>
+              </tr>
+            </thead>
+            <tbody id="admin-users-body"></tbody>
+          </table>
+        </div>
+      </details>
+    </main>
+
+    <div id="hourly-modal" class="modal-overlay hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="hourly-modal-title">
+        <div class="modal-head">
+          <h2 id="hourly-modal-title">Evolução no dia</h2>
+          <button id="close-hourly-modal" class="ghost" type="button">Fechar</button>
+        </div>
+        <p id="hourly-modal-subtitle" class="modal-subtitle"></p>
+        <canvas id="hourly-evolution-chart" height="170"></canvas>
+      </div>
+    </div>
+
+    <div id="edit-record-modal" class="modal-overlay hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-record-title">
+        <div class="modal-head">
+          <h2 id="edit-record-title">Editar atendimento</h2>
+          <button id="close-edit-record-modal" class="ghost" type="button">Fechar</button>
+        </div>
+        <form id="edit-record-form" class="manual-form">
+          <label>
+            Data
+            <input id="edit-record-date" type="date" required />
+          </label>
+          <label>
+            Hora
+            <input id="edit-record-time" type="time" required />
+          </label>
+          <label>
+            Tipo
+            <select id="edit-record-type" required>
+              <option value="adulto">Adulto</option>
+              <option value="pediatria">Pediatria</option>
+              <option value="one">One</option>
+              <option value="plantao">Plantão</option>
+            </select>
+          </label>
+          <div class="modal-actions">
+            <button type="submit" class="ghost">Salvar edição</button>
+            <button id="delete-record-btn" type="button" class="ghost">Excluir atendimento</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

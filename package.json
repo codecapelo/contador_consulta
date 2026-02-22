@@ -1,0 +1,13 @@
+{
+  "name": "contador-consulta",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "netlify dev"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.3"
+  }
+}

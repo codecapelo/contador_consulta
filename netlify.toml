@@ -1,0 +1,38 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/auth/register"
+  to = "/.netlify/functions/auth-register"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/login"
+  to = "/.netlify/functions/auth-login"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/session"
+  to = "/.netlify/functions/auth-session"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/logout"
+  to = "/.netlify/functions/auth-logout"
+  status = 200
+
+[[redirects]]
+  from = "/api/data"
+  to = "/.netlify/functions/data-get"
+  status = 200
+
+[[redirects]]
+  from = "/api/data/save"
+  to = "/.netlify/functions/data-save"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/users"
+  to = "/.netlify/functions/admin-users"
+  status = 200
