@@ -556,13 +556,77 @@ function getMonthRevenue(monthKey) {
   return totalRevenue;
 }
 
+async function handleAdminResetPassword(userEmail, button) {
+  const newPassword = window.prompt(
+    `Nova senha para ${userEmail} (mínimo 6 caracteres):`
+  );
+  if (newPassword === null) return;
+  if (newPassword.length < 6) {
+    alert("A nova senha deve ter pelo menos 6 caracteres.");
+    return;
+  }
+
+  const confirmation = window.prompt("Confirme a nova senha:");
+  if (confirmation === null) return;
+  if (confirmation !== newPassword) {
+    alert("As senhas não conferem.");
+    return;
+  }
+
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Salvando...";
+  try {
+    const payload = await apiRequest("/admin/reset-password", {
+      method: "POST",
+      body: { email: userEmail, newPassword },
+    });
+    alert(payload.message || `Senha de ${userEmail} redefinida.`);
+  } catch (err) {
+    alert(err.message || "Não foi possível redefinir a senha.");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
+async function handleAdminDeleteUser(userEmail, button) {
+  const typedEmail = window.prompt(
+    `Para confirmar, digite o e-mail completo da conta que será apagada:\\n${userEmail}`
+  );
+  if (typedEmail === null) return;
+  if (typedEmail.trim().toLowerCase() !== userEmail.toLowerCase()) {
+    alert("E-mail de confirmação não confere.");
+    return;
+  }
+
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Apagando...";
+  try {
+    const payload = await apiRequest("/admin/delete-user", {
+      method: "POST",
+      body: { email: userEmail },
+    });
+    alert(payload.message || `Conta ${userEmail} apagada.`);
+    clearAdminSummaryCache();
+    refreshAdminSummaryForCurrentMonth();
+    renderAdminPanel();
+  } catch (err) {
+    alert(err.message || "Não foi possível apagar a conta.");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
 function renderAdminRows(rows) {
   const tbody = document.getElementById("admin-users-body");
   tbody.innerHTML = "";
 
   if (!Array.isArray(rows) || rows.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="5">Nenhum usuário encontrado.</td>`;
+    tr.innerHTML = `<td colspan="6">Nenhum usuário encontrado.</td>`;
     tbody.appendChild(tr);
     return;
   }
@@ -575,7 +639,17 @@ function renderAdminRows(rows) {
       <td>${row.consults || 0}</td>
       <td>${formatCurrency(Number(row.revenue || 0))}</td>
       <td>${row.activeDays || 0}</td>
+      <td>
+        <button type="button" class="ghost day-action-btn admin-reset-btn">Redefinir senha</button>
+        <button type="button" class="ghost day-action-btn admin-delete-btn">Apagar conta</button>
+      </td>
     `;
+
+    const resetButton = tr.querySelector(".admin-reset-btn");
+    const deleteButton = tr.querySelector(".admin-delete-btn");
+    resetButton.addEventListener("click", () => handleAdminResetPassword(row.email, resetButton));
+    deleteButton.addEventListener("click", () => handleAdminDeleteUser(row.email, deleteButton));
+
     tbody.appendChild(tr);
   }
 }
@@ -619,7 +693,7 @@ function renderAdminPanel() {
   tbody.innerHTML = "";
   const tr = document.createElement("tr");
   const hasError = Boolean(state.adminSummaryError[monthKey]);
-  tr.innerHTML = `<td colspan="5">${
+  tr.innerHTML = `<td colspan="6">${
     hasError ? state.adminSummaryError[monthKey] : "Carregando dados do administrador..."
   }</td>`;
   tbody.appendChild(tr);
@@ -628,7 +702,7 @@ function renderAdminPanel() {
     fetchAdminSummary(monthKey);
   } else {
     const retryTr = document.createElement("tr");
-    retryTr.innerHTML = `<td colspan="5">Altere o mês ou atualize a página para tentar novamente.</td>`;
+    retryTr.innerHTML = `<td colspan="6">Altere o mês ou atualize a página para tentar novamente.</td>`;
     tbody.appendChild(retryTr);
   }
 }

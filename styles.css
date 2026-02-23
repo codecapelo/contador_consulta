@@ -224,6 +224,14 @@ body {
   padding: 0.45rem 0.35rem;
 }
 
+.admin-table td:last-child {
+  white-space: nowrap;
+}
+
+.admin-table .day-action-btn {
+  margin-right: 0.3rem;
+}
+
 .hero {
   animation: rise-in 0.45s ease-out;
 }

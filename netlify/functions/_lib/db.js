@@ -133,6 +133,20 @@ async function updateUserData(email, data) {
   return normalizedData;
 }
 
+async function setUserPasswordHash(email, passwordHash) {
+  const emailKey = normalizeEmail(email);
+  await query(`UPDATE users SET password_hash = $2, updated_at = NOW() WHERE email = $1`, [
+    emailKey,
+    String(passwordHash || ""),
+  ]);
+}
+
+async function deleteUserByEmail(email) {
+  const emailKey = normalizeEmail(email);
+  const result = await query(`DELETE FROM users WHERE email = $1`, [emailKey]);
+  return result.rowCount > 0;
+}
+
 async function listUsers() {
   const result = await query(`SELECT email, role, data FROM users ORDER BY email ASC`);
   return result.rows.map((row) => ({
@@ -148,5 +162,7 @@ module.exports = {
   findUserByEmail,
   createUser,
   updateUserData,
+  setUserPasswordHash,
+  deleteUserByEmail,
   listUsers,
 };
