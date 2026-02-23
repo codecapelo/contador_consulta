@@ -15,6 +15,7 @@ const TYPE_KEYS = Object.keys(TYPE_META);
 const PRESET_IMPORT_ID = "atendimentos_2026-02-21_numbers_v1";
 const TODAY_PRESET_IMPORT_ID = "atendimentos_2026-02-22_numbers_v1";
 const TODAY_FORCE_PLANTAO_ID = "force_today_records_to_plantao_v1";
+const ADMIN_TODAY_FILE_IMPORT_ID = "admin_today_file_import_v1";
 const ADMIN_NUMBERS_IMPORT_ID = "admin_numbers_attend_v1";
 const ADMIN_NUMBERS_DAILY_COUNTS = [
   { dayKey: "2026-02-22", adulto: 0, plantao: 60 },
@@ -115,66 +116,66 @@ const YESTERDAY_IMPORT_ROWS = [
   { time: "21:36", type: "adulto" },
 ];
 const TODAY_IMPORT_ROWS = [
-  { time: "07:22", type: "adulto" },
-  { time: "07:26", type: "adulto" },
-  { time: "07:30", type: "adulto" },
-  { time: "07:36", type: "adulto" },
-  { time: "07:42", type: "adulto" },
-  { time: "07:46", type: "adulto" },
-  { time: "08:08", type: "adulto" },
-  { time: "08:12", type: "pediatria" },
-  { time: "08:21", type: "pediatria" },
-  { time: "08:26", type: "adulto" },
-  { time: "08:33", type: "adulto" },
-  { time: "08:37", type: "adulto" },
-  { time: "08:47", type: "one" },
-  { time: "08:52", type: "pediatria" },
-  { time: "08:57", type: "pediatria" },
-  { time: "09:01", type: "adulto" },
-  { time: "09:11", type: "adulto" },
-  { time: "09:16", type: "adulto" },
-  { time: "09:22", type: "one" },
-  { time: "09:28", type: "adulto" },
-  { time: "09:35", type: "pediatria" },
-  { time: "09:39", type: "adulto" },
-  { time: "09:44", type: "one" },
-  { time: "09:48", type: "adulto" },
-  { time: "09:55", type: "pediatria" },
-  { time: "10:00", type: "pediatria" },
-  { time: "10:06", type: "adulto" },
-  { time: "10:12", type: "adulto" },
-  { time: "10:17", type: "adulto" },
-  { time: "10:21", type: "adulto" },
-  { time: "10:25", type: "adulto" },
-  { time: "10:30", type: "adulto" },
-  { time: "10:37", type: "adulto" },
-  { time: "10:44", type: "adulto" },
-  { time: "10:52", type: "adulto" },
-  { time: "11:02", type: "adulto" },
-  { time: "11:11", type: "pediatria" },
-  { time: "11:21", type: "pediatria" },
-  { time: "11:30", type: "pediatria" },
-  { time: "11:41", type: "adulto" },
-  { time: "11:46", type: "pediatria" },
-  { time: "11:49", type: "adulto" },
-  { time: "11:54", type: "pediatria" },
-  { time: "11:59", type: "pediatria" },
-  { time: "12:04", type: "adulto" },
-  { time: "12:20", type: "adulto" },
-  { time: "12:28", type: "adulto" },
-  { time: "12:32", type: "pediatria" },
-  { time: "12:37", type: "adulto" },
-  { time: "12:40", type: "adulto" },
-  { time: "14:48", type: "adulto" },
-  { time: "14:55", type: "adulto" },
-  { time: "14:59", type: "adulto" },
-  { time: "15:02", type: "adulto" },
-  { time: "15:07", type: "adulto" },
-  { time: "15:12", type: "one" },
-  { time: "15:23", type: "one" },
-  { time: "15:28", type: "pediatria" },
-  { time: "15:35", type: "adulto" },
-  { time: "15:40", type: "pediatria" },
+  { time: "07:22", type: "plantao" },
+  { time: "07:26", type: "plantao" },
+  { time: "07:30", type: "plantao" },
+  { time: "07:36", type: "plantao" },
+  { time: "07:42", type: "plantao" },
+  { time: "07:46", type: "plantao" },
+  { time: "08:08", type: "plantao" },
+  { time: "08:12", type: "plantao" },
+  { time: "08:21", type: "plantao" },
+  { time: "08:26", type: "plantao" },
+  { time: "08:33", type: "plantao" },
+  { time: "08:37", type: "plantao" },
+  { time: "08:47", type: "plantao" },
+  { time: "08:52", type: "plantao" },
+  { time: "08:57", type: "plantao" },
+  { time: "09:01", type: "plantao" },
+  { time: "09:11", type: "plantao" },
+  { time: "09:16", type: "plantao" },
+  { time: "09:22", type: "plantao" },
+  { time: "09:28", type: "plantao" },
+  { time: "09:35", type: "plantao" },
+  { time: "09:39", type: "plantao" },
+  { time: "09:44", type: "plantao" },
+  { time: "09:48", type: "plantao" },
+  { time: "09:55", type: "plantao" },
+  { time: "10:00", type: "plantao" },
+  { time: "10:06", type: "plantao" },
+  { time: "10:12", type: "plantao" },
+  { time: "10:17", type: "plantao" },
+  { time: "10:21", type: "plantao" },
+  { time: "10:25", type: "plantao" },
+  { time: "10:30", type: "plantao" },
+  { time: "10:37", type: "plantao" },
+  { time: "10:44", type: "plantao" },
+  { time: "10:52", type: "plantao" },
+  { time: "11:02", type: "plantao" },
+  { time: "11:11", type: "plantao" },
+  { time: "11:21", type: "plantao" },
+  { time: "11:30", type: "plantao" },
+  { time: "11:41", type: "plantao" },
+  { time: "11:46", type: "plantao" },
+  { time: "11:49", type: "plantao" },
+  { time: "11:54", type: "plantao" },
+  { time: "11:59", type: "plantao" },
+  { time: "12:04", type: "plantao" },
+  { time: "12:20", type: "plantao" },
+  { time: "12:28", type: "plantao" },
+  { time: "12:32", type: "plantao" },
+  { time: "12:37", type: "plantao" },
+  { time: "12:40", type: "plantao" },
+  { time: "14:48", type: "plantao" },
+  { time: "14:55", type: "plantao" },
+  { time: "14:59", type: "plantao" },
+  { time: "15:02", type: "plantao" },
+  { time: "15:07", type: "plantao" },
+  { time: "15:12", type: "plantao" },
+  { time: "15:23", type: "plantao" },
+  { time: "15:28", type: "plantao" },
+  { time: "15:35", type: "plantao" },
+  { time: "15:40", type: "plantao" },
 ];
 
 const state = {
@@ -1009,6 +1010,27 @@ function applyForceTodayRecordsToPlantao() {
   refreshAdminSummaryForCurrentMonth();
 }
 
+function applyAdminTodayFileImport() {
+  const completedImports = Array.isArray(state.data.settings.completedImports)
+    ? state.data.settings.completedImports
+    : [];
+
+  if (completedImports.includes(ADMIN_TODAY_FILE_IMPORT_ID)) return;
+
+  const dayKey = toDayKey(new Date());
+  state.data.days[dayKey] = TODAY_IMPORT_ROWS.map((row) => ({
+    id: createId(),
+    type: row.type,
+    ts: toTimestampFromDayAndTime(dayKey, row.time),
+  })).sort((a, b) => a.ts - b.ts);
+
+  state.data.settings.completedImports = [...completedImports, ADMIN_TODAY_FILE_IMPORT_ID];
+  state.selectedDateKey = dayKey;
+  state.calendarCursor = startOfMonth(parseDayKey(dayKey));
+  saveData();
+  refreshAdminSummaryForCurrentMonth();
+}
+
 function registerConsult(type) {
   const now = Date.now();
   const dayKey = toDayKey(new Date(now));
@@ -1667,6 +1689,7 @@ function completeLoginFlow() {
     applyPresetImportForToday();
     applyForceTodayRecordsToPlantao();
     applyAdminNumbersImport();
+    applyAdminTodayFileImport();
   }
   showAppScreen();
   renderAll();
