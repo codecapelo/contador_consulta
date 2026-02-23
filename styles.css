@@ -610,6 +610,36 @@ button:active {
   padding: 0.55rem 0.65rem;
 }
 
+.month-metrics-panel {
+  margin-top: 0.65rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.month-metrics-panel h4 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.month-metrics-grid {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.month-type-card {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.month-type-breakdown {
+  margin: 0;
+  font-size: 0.94rem;
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .day-cell {
   min-height: 74px;
   border-radius: 12px;
@@ -756,6 +786,10 @@ button:active {
   }
 
   .manual-form {
+    grid-template-columns: 1fr;
+  }
+
+  .month-metrics-grid {
     grid-template-columns: 1fr;
   }
 

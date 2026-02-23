@@ -817,6 +817,48 @@ function computeDayMetrics(dayKey) {
   };
 }
 
+function computeMonthMetrics(monthKey) {
+  const counts = makeEmptyCounts();
+  const pauseThresholdMin = getPauseThresholdMinutes();
+  let total = 0;
+  let totalClockHours = 0;
+  let activeHours = 0;
+
+  for (const [dayKey, dayRecords] of Object.entries(state.data.days)) {
+    if (!dayKey.startsWith(`${monthKey}-`)) continue;
+    if (!Array.isArray(dayRecords) || dayRecords.length === 0) continue;
+
+    const records = [...dayRecords].sort((a, b) => a.ts - b.ts);
+    for (const record of records) {
+      counts[record.type] += 1;
+    }
+    total += records.length;
+
+    if (records.length < 2) continue;
+
+    const dayClockHours = (records[records.length - 1].ts - records[0].ts) / MS_HOUR;
+    totalClockHours += dayClockHours;
+
+    const dayPauseMinutes = getIntervalsMinutes(records)
+      .filter((gap) => gap > pauseThresholdMin)
+      .reduce((sum, gap) => sum + gap, 0);
+    activeHours += Math.max(dayClockHours - dayPauseMinutes / 60, 0);
+  }
+
+  const revenue = getRevenueFromCounts(counts);
+  const hasAverageSample = total >= MIN_CONSULTS_FOR_AVERAGES;
+
+  return {
+    counts,
+    total,
+    revenue,
+    grossRevenuePerHour: hasAverageSample && totalClockHours > 0 ? revenue / totalClockHours : null,
+    netRevenuePerHour: hasAverageSample && activeHours > 0 ? revenue / activeHours : null,
+    grossConsultationsPerHour: hasAverageSample && totalClockHours > 0 ? total / totalClockHours : null,
+    netConsultationsPerHour: hasAverageSample && activeHours > 0 ? total / activeHours : null,
+  };
+}
+
 function importRowsIntoDay(dayKey, rows) {
   if (!state.data.days[dayKey]) state.data.days[dayKey] = [];
 
@@ -1104,6 +1146,7 @@ function renderMonthGoalMetrics() {
   const monthLabel = formatMonthLong(monthKey);
   const goal = getMonthlyGoal(monthKey);
   const monthRevenue = getMonthRevenue(monthKey);
+  const monthMetrics = computeMonthMetrics(monthKey);
 
   document.getElementById("month-goal-title").textContent = `Meta do mês (${monthLabel})`;
   document.getElementById("monthly-target-label").textContent = `Meta de ${monthLabel} (R$)`;
@@ -1114,6 +1157,24 @@ function renderMonthGoalMetrics() {
   const goalValueEl = document.getElementById("month-goal-value");
   const remainingEl = document.getElementById("month-goal-remaining");
   const progressEl = document.getElementById("month-goal-progress");
+  document.getElementById(
+    "month-type-breakdown"
+  ).textContent = TYPE_KEYS.map(
+    (type) => `${TYPE_META[type].label}: ${monthMetrics.counts[type]}`
+  ).join(" | ");
+  document.getElementById("month-total-consults").textContent = `Total do mês: ${monthMetrics.total}`;
+  document.getElementById("month-gross-revenue-per-hour").textContent = formatRateCurrency(
+    monthMetrics.grossRevenuePerHour
+  );
+  document.getElementById("month-net-revenue-per-hour").textContent = formatRateCurrency(
+    monthMetrics.netRevenuePerHour
+  );
+  document.getElementById("month-gross-consults-per-hour").textContent = formatRateNumber(
+    monthMetrics.grossConsultationsPerHour
+  );
+  document.getElementById("month-net-consults-per-hour").textContent = formatRateNumber(
+    monthMetrics.netConsultationsPerHour
+  );
 
   if (goal === null) {
     goalValueEl.textContent = "Não definida";
