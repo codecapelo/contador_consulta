@@ -732,6 +732,43 @@ function getTimelineWindow(dayKey, records) {
   return { windowStartTs, windowEndTs };
 }
 
+function ensureTimelineTooltip() {
+  let tooltip = document.getElementById("timeline-dot-tooltip");
+  if (tooltip) return tooltip;
+
+  tooltip = document.createElement("div");
+  tooltip.id = "timeline-dot-tooltip";
+  tooltip.className = "timeline-dot-tooltip hidden";
+  document.body.appendChild(tooltip);
+  return tooltip;
+}
+
+function positionTimelineTooltip(clientX, clientY) {
+  const tooltip = ensureTimelineTooltip();
+  const offset = 12;
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const maxLeft = Math.max(window.innerWidth - tooltipRect.width - 8, 8);
+  const left = Math.min(Math.max(clientX + offset, 8), maxLeft);
+  const topAbove = clientY - tooltipRect.height - offset;
+  const top = topAbove >= 8 ? topAbove : clientY + offset;
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function showTimelineTooltip(label, clientX, clientY) {
+  const tooltip = ensureTimelineTooltip();
+  tooltip.textContent = label;
+  tooltip.classList.remove("hidden");
+  positionTimelineTooltip(clientX, clientY);
+}
+
+function hideTimelineTooltip() {
+  const tooltip = document.getElementById("timeline-dot-tooltip");
+  if (!tooltip) return;
+  tooltip.classList.add("hidden");
+}
+
 function renderConsultTimeline(dayMetrics) {
   const timelineEl = document.getElementById("consult-timeline");
   const feedbackEl = document.getElementById("timeline-feedback");
@@ -741,6 +778,7 @@ function renderConsultTimeline(dayMetrics) {
   );
 
   timelineEl.innerHTML = "";
+  hideTimelineTooltip();
   renderTimelineAxis(windowStartTs, windowEndTs);
 
   if (!dayMetrics.records.length) {
@@ -768,10 +806,18 @@ function renderConsultTimeline(dayMetrics) {
 
   for (const record of visibleRecords) {
     const leftPercent = ((record.ts - windowStartTs) / spanMs) * 100;
+    const timelineLabel = `${formatTime(record.ts)} - ${TYPE_META[record.type].label}`;
     const dot = document.createElement("span");
     dot.className = `consult-timeline-dot ${record.type}`;
     dot.style.left = `${leftPercent.toFixed(2)}%`;
-    dot.title = `${formatTime(record.ts)} - ${TYPE_META[record.type].label}`;
+    dot.setAttribute("aria-label", timelineLabel);
+    dot.addEventListener("mouseenter", (event) => {
+      showTimelineTooltip(timelineLabel, event.clientX, event.clientY);
+    });
+    dot.addEventListener("mousemove", (event) => {
+      positionTimelineTooltip(event.clientX, event.clientY);
+    });
+    dot.addEventListener("mouseleave", hideTimelineTooltip);
     track.appendChild(dot);
   }
 
