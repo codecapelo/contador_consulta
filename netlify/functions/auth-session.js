@@ -30,7 +30,7 @@ exports.handler = async (event) => {
     }
 
     return json(200, {
-      user: { email: user.email, role: user.role },
+      user: { email: user.email, role: user.role, shareEnabled: user.shareEnabled !== false },
       data: user.data,
     });
   } catch (err) {

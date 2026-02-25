@@ -84,6 +84,20 @@
 
       <section class="actions card">
         <h2>Registrar consulta</h2>
+        <section class="consult-timeline-box">
+          <div class="consult-timeline-head">
+            <p class="metric-label">Linha do tempo dos atendimentos</p>
+            <p id="timeline-feedback" class="metric-hint"></p>
+          </div>
+          <div id="consult-timeline" class="consult-timeline"></div>
+          <div class="consult-timeline-axis">
+            <span>00h</span>
+            <span>06h</span>
+            <span>12h</span>
+            <span>18h</span>
+            <span>24h</span>
+          </div>
+        </section>
         <div class="btn-grid">
           <button class="type-btn adulto" data-type="adulto">Adulto (+R$ 15)</button>
           <button class="type-btn pediatria" data-type="pediatria">Pediatria (+R$ 20)</button>
@@ -91,7 +105,10 @@
           <button class="type-btn plantao" data-type="plantao">Plantão (+R$ 20)</button>
         </div>
         <div class="action-row">
-          <button id="undo-btn" class="ghost">Desfazer último do dia selecionado</button>
+          <div class="action-left">
+            <button id="undo-btn" class="ghost">Desfazer último do dia selecionado</button>
+            <button id="toggle-pause-btn" class="ghost" type="button">Iniciar pausa</button>
+          </div>
           <div class="settings-row">
             <label class="target-hours">
               Jornada alvo (h)
@@ -100,6 +117,10 @@
             <label class="target-hours">
               Pausa acima de (min)
               <input id="pause-threshold" type="number" min="1" max="240" step="1" />
+            </label>
+            <label class="share-pref-label">
+              <input id="share-data-toggle" type="checkbox" />
+              Compartilhar minhas métricas com outras contas
             </label>
           </div>
         </div>
@@ -203,6 +224,20 @@
           <p class="metric-label">Estimativa no fim da jornada</p>
           <p id="estimated-revenue" class="metric-value"></p>
         </article>
+        <article class="metric card">
+          <p class="metric-label">Contas ativas no dia (rede)</p>
+          <div class="network-pair">
+            <div>
+              <p class="metric-sub-label">Média atend./h líquida</p>
+              <p id="network-net-consults-per-hour" class="metric-value metric-compact"></p>
+            </div>
+            <div>
+              <p class="metric-sub-label">Média R$/h líquida</p>
+              <p id="network-net-revenue-per-hour" class="metric-value metric-compact"></p>
+            </div>
+          </div>
+          <p id="network-day-summary" class="metric-hint"></p>
+        </article>
       </section>
 
       <section class="split-layout">
@@ -212,6 +247,8 @@
             <p id="type-breakdown"></p>
           </div>
           <canvas id="day-chart" height="180"></canvas>
+          <h3>Média das contas ativas (dia)</h3>
+          <canvas id="network-day-chart" height="120"></canvas>
           <h3>Intervalos e pausas</h3>
           <ul id="interval-stats" class="stats-list"></ul>
           <ul id="pause-stats" class="stats-list"></ul>
@@ -300,6 +337,7 @@
               <tr>
                 <th>Usuário</th>
                 <th>Perfil</th>
+                <th>Compartilha</th>
                 <th>Atendimentos</th>
                 <th>Receita</th>
                 <th>Dias ativos</th>

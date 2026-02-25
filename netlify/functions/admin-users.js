@@ -67,6 +67,7 @@ exports.handler = async (event) => {
       return {
         email: user.email,
         role: user.role,
+        shareEnabled: user.shareEnabled !== false,
         consults: summary.consults,
         revenue: summary.revenue,
         activeDays: summary.activeDays,

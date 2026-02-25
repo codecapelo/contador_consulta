@@ -7,6 +7,33 @@ function createId() {
   return randomUUID();
 }
 
+function dayBoundsFromKey(dayKey) {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const startTs = new Date(year, month - 1, day, 0, 0, 0, 0).getTime();
+  const endTs = new Date(year, month - 1, day, 23, 59, 59, 999).getTime();
+  return { startTs, endTs };
+}
+
+function normalizePauseEntriesForDay(entries, dayKey) {
+  if (!Array.isArray(entries)) return [];
+  const { startTs: dayStartTs, endTs: dayEndTs } = dayBoundsFromKey(dayKey);
+
+  return entries
+    .map((entry) => {
+      const startTs = Number(entry?.startTs);
+      const endTs = Number(entry?.endTs);
+      if (!Number.isFinite(startTs) || !Number.isFinite(endTs) || endTs <= startTs) return null;
+      const boundedStart = Math.max(startTs, dayStartTs);
+      const boundedEnd = Math.min(endTs, dayEndTs);
+      if (!Number.isFinite(boundedStart) || !Number.isFinite(boundedEnd) || boundedEnd <= boundedStart) {
+        return null;
+      }
+      return { startTs: boundedStart, endTs: boundedEnd };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.startTs - b.startTs);
+}
+
 function createEmptyData() {
   return {
     days: {},
@@ -15,6 +42,8 @@ function createEmptyData() {
       pauseThresholdMin: DEFAULT_PAUSE_THRESHOLD_MIN,
       monthlyGoals: {},
       completedImports: [],
+      manualPauses: {},
+      activePause: null,
     },
   };
 }
@@ -55,6 +84,34 @@ function normalizeData(parsed) {
     ? parsed.settings.completedImports.filter((value) => typeof value === "string")
     : [];
 
+  const manualPausesRaw = parsed?.settings?.manualPauses;
+  const manualPauses = {};
+  if (manualPausesRaw && typeof manualPausesRaw === "object") {
+    for (const [dayKey, entries] of Object.entries(manualPausesRaw)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) continue;
+      const normalizedEntries = normalizePauseEntriesForDay(entries, dayKey);
+      if (normalizedEntries.length > 0) {
+        manualPauses[dayKey] = normalizedEntries;
+      }
+    }
+  }
+
+  const activePauseRaw = parsed?.settings?.activePause;
+  let activePause = null;
+  if (
+    activePauseRaw &&
+    typeof activePauseRaw === "object" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(String(activePauseRaw.dayKey || ""))
+  ) {
+    const dayKey = String(activePauseRaw.dayKey);
+    const startTs = Number(activePauseRaw.startTs);
+    if (Number.isFinite(startTs)) {
+      const { startTs: dayStartTs, endTs: dayEndTs } = dayBoundsFromKey(dayKey);
+      const boundedStart = Math.min(Math.max(startTs, dayStartTs), dayEndTs);
+      activePause = { dayKey, startTs: boundedStart };
+    }
+  }
+
   return {
     days,
     settings: {
@@ -65,6 +122,8 @@ function normalizeData(parsed) {
           : DEFAULT_PAUSE_THRESHOLD_MIN,
       monthlyGoals,
       completedImports,
+      manualPauses,
+      activePause,
     },
   };
 }

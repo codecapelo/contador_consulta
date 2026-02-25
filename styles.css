@@ -214,7 +214,7 @@ body {
 .admin-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 560px;
+  min-width: 760px;
 }
 
 .admin-table th,
@@ -267,6 +267,71 @@ h1 {
 .actions h2,
 .card h2 {
   margin-top: 0;
+}
+
+.consult-timeline-box {
+  margin-bottom: 0.75rem;
+  background: #f2f6f2;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.55rem 0.65rem;
+}
+
+.consult-timeline-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.consult-timeline {
+  position: relative;
+  margin-top: 0.45rem;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(90deg, #f7faf7 0%, #edf3ef 100%);
+  overflow: hidden;
+}
+
+.consult-timeline-track {
+  position: absolute;
+  inset: 0;
+}
+
+.consult-timeline-dot {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  border: 1px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(18, 33, 23, 0.12);
+}
+
+.consult-timeline-dot.adulto {
+  background: var(--adulto);
+}
+
+.consult-timeline-dot.pediatria {
+  background: var(--pediatria);
+}
+
+.consult-timeline-dot.one {
+  background: var(--one);
+}
+
+.consult-timeline-dot.plantao {
+  background: var(--plantao);
+}
+
+.consult-timeline-axis {
+  margin-top: 0.4rem;
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .btn-grid {
@@ -329,6 +394,18 @@ button:active {
   flex-wrap: wrap;
 }
 
+.action-left {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+#toggle-pause-btn.pause-active {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
 .manual-box {
   margin-top: 0.8rem;
   border: 1px solid var(--border);
@@ -371,6 +448,18 @@ button:active {
   gap: 0.65rem;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.share-pref-label {
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  font-size: 0.85rem;
+}
+
+.share-pref-label input {
+  margin: 0;
 }
 
 .target-hours {
@@ -424,6 +513,13 @@ button:active {
   margin-top: 0.35rem;
   display: grid;
   gap: 0.55rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.network-pair {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.6rem;
   grid-template-columns: 1fr 1fr;
 }
 
@@ -790,6 +886,10 @@ button:active {
   }
 
   .time-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .network-pair {
     grid-template-columns: 1fr;
   }
 

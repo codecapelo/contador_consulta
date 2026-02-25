@@ -46,3 +46,18 @@
   from = "/api/admin/delete-user"
   to = "/.netlify/functions/admin-delete-user"
   status = 200
+
+[[redirects]]
+  from = "/api/admin/set-sharing"
+  to = "/.netlify/functions/admin-set-sharing"
+  status = 200
+
+[[redirects]]
+  from = "/api/user/share-preference"
+  to = "/.netlify/functions/user-share-preference"
+  status = 200
+
+[[redirects]]
+  from = "/api/network/day-metrics"
+  to = "/.netlify/functions/network-day-metrics"
+  status = 200

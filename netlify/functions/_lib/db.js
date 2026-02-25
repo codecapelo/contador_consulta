@@ -38,12 +38,14 @@ async function ensureSchema() {
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'user',
+      share_enabled BOOLEAN NOT NULL DEFAULT TRUE,
       data JSONB NOT NULL DEFAULT '{"days":{},"settings":{"targetHours":8,"pauseThresholdMin":20,"monthlyGoals":{},"completedImports":[]}}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CHECK (role IN ('admin', 'user'))
     );
   `);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS share_enabled BOOLEAN NOT NULL DEFAULT TRUE;`);
 }
 
 async function ensureAdminUser() {
@@ -96,7 +98,7 @@ async function findUserByEmail(email) {
   if (!emailKey) return null;
 
   const result = await query(
-    `SELECT email, password_hash, role, data FROM users WHERE email = $1 LIMIT 1`,
+    `SELECT email, password_hash, role, share_enabled, data FROM users WHERE email = $1 LIMIT 1`,
     [emailKey]
   );
   if (result.rowCount === 0) return null;
@@ -105,6 +107,7 @@ async function findUserByEmail(email) {
     email: row.email,
     passwordHash: row.password_hash,
     role: row.role,
+    shareEnabled: row.share_enabled !== false,
     data: normalizeData(row.data || createEmptyData()),
   };
 }
@@ -113,12 +116,13 @@ async function createUser({ email, passwordHash, role = "user" }) {
   const emailKey = normalizeEmail(email);
   const normalizedData = normalizeData(createEmptyData());
   await query(
-    `INSERT INTO users (email, password_hash, role, data) VALUES ($1, $2, $3, $4::jsonb)`,
+    `INSERT INTO users (email, password_hash, role, share_enabled, data) VALUES ($1, $2, $3, TRUE, $4::jsonb)`,
     [emailKey, passwordHash, role, JSON.stringify(normalizedData)]
   );
   return {
     email: emailKey,
     role,
+    shareEnabled: true,
     data: normalizedData,
   };
 }
@@ -147,11 +151,22 @@ async function deleteUserByEmail(email) {
   return result.rowCount > 0;
 }
 
+async function updateUserShareEnabled(email, shareEnabled) {
+  const emailKey = normalizeEmail(email);
+  const enabled = shareEnabled !== false;
+  await query(`UPDATE users SET share_enabled = $2, updated_at = NOW() WHERE email = $1`, [
+    emailKey,
+    enabled,
+  ]);
+  return enabled;
+}
+
 async function listUsers() {
-  const result = await query(`SELECT email, role, data FROM users ORDER BY email ASC`);
+  const result = await query(`SELECT email, role, share_enabled, data FROM users ORDER BY email ASC`);
   return result.rows.map((row) => ({
     email: row.email,
     role: row.role,
+    shareEnabled: row.share_enabled !== false,
     data: normalizeData(row.data || createEmptyData()),
   }));
 }
@@ -164,5 +179,6 @@ module.exports = {
   updateUserData,
   setUserPasswordHash,
   deleteUserByEmail,
+  updateUserShareEnabled,
   listUsers,
 };

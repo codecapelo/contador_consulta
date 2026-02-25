@@ -22,7 +22,7 @@ exports.handler = async (event) => {
     if (!user) return json(401, { message: "Sessão inválida." });
 
     return json(200, {
-      user: { email: user.email, role: user.role },
+      user: { email: user.email, role: user.role, shareEnabled: user.shareEnabled !== false },
       data: user.data,
     });
   } catch (err) {

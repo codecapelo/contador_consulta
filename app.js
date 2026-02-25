@@ -182,6 +182,9 @@ const state = {
   data: createEmptyData(),
   currentUserEmail: null,
   currentUserRole: null,
+  currentUserShareEnabled: true,
+  currentDayNetworkMetrics: null,
+  currentDayNetworkMetricsLoading: false,
   selectedDateKey: toDayKey(new Date()),
   calendarCursor: startOfMonth(new Date()),
   editingRecordId: null,
@@ -198,8 +201,35 @@ const state = {
     week: null,
     month: null,
     hourly: null,
+    networkDay: null,
   },
 };
+
+function dayBoundsFromKey(dayKey) {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const startTs = new Date(year, month - 1, day, 0, 0, 0, 0).getTime();
+  const endTs = new Date(year, month - 1, day, 23, 59, 59, 999).getTime();
+  return { startTs, endTs };
+}
+
+function normalizePauseEntriesForDay(entries, dayKey) {
+  if (!Array.isArray(entries)) return [];
+  const { startTs: dayStartTs, endTs: dayEndTs } = dayBoundsFromKey(dayKey);
+  return entries
+    .map((entry) => {
+      const startTs = Number(entry?.startTs);
+      const endTs = Number(entry?.endTs);
+      if (!Number.isFinite(startTs) || !Number.isFinite(endTs) || endTs <= startTs) return null;
+      const boundedStart = Math.max(startTs, dayStartTs);
+      const boundedEnd = Math.min(endTs, dayEndTs);
+      if (!Number.isFinite(boundedStart) || !Number.isFinite(boundedEnd) || boundedEnd <= boundedStart) {
+        return null;
+      }
+      return { startTs: boundedStart, endTs: boundedEnd };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.startTs - b.startTs);
+}
 
 function createEmptyData() {
   return {
@@ -209,6 +239,8 @@ function createEmptyData() {
       pauseThresholdMin: DEFAULT_PAUSE_THRESHOLD_MIN,
       monthlyGoals: {},
       completedImports: [],
+      manualPauses: {},
+      activePause: null,
     },
   };
 }
@@ -243,6 +275,35 @@ function normalizeData(parsed) {
   const completedImports = Array.isArray(parsed?.settings?.completedImports)
     ? parsed.settings.completedImports.filter((item) => typeof item === "string")
     : [];
+
+  const manualPausesRaw = parsed?.settings?.manualPauses;
+  const manualPauses = {};
+  if (manualPausesRaw && typeof manualPausesRaw === "object") {
+    for (const [dayKey, entries] of Object.entries(manualPausesRaw)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) continue;
+      const normalizedEntries = normalizePauseEntriesForDay(entries, dayKey);
+      if (normalizedEntries.length > 0) {
+        manualPauses[dayKey] = normalizedEntries;
+      }
+    }
+  }
+
+  const activePauseRaw = parsed?.settings?.activePause;
+  let activePause = null;
+  if (
+    activePauseRaw &&
+    typeof activePauseRaw === "object" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(String(activePauseRaw.dayKey || ""))
+  ) {
+    const dayKey = String(activePauseRaw.dayKey);
+    const startTs = Number(activePauseRaw.startTs);
+    if (Number.isFinite(startTs)) {
+      const { startTs: dayStartTs, endTs: dayEndTs } = dayBoundsFromKey(dayKey);
+      const boundedStart = Math.min(Math.max(startTs, dayStartTs), dayEndTs);
+      activePause = { dayKey, startTs: boundedStart };
+    }
+  }
+
   return {
     days,
     settings: {
@@ -253,6 +314,8 @@ function normalizeData(parsed) {
           : DEFAULT_PAUSE_THRESHOLD_MIN,
       monthlyGoals,
       completedImports,
+      manualPauses,
+      activePause,
     },
   };
 }
@@ -456,6 +519,9 @@ function setSessionUser(user) {
   if (!user) {
     state.currentUserEmail = null;
     state.currentUserRole = null;
+    state.currentUserShareEnabled = true;
+    state.currentDayNetworkMetrics = null;
+    state.currentDayNetworkMetricsLoading = false;
     state.adminSummaryCache = {};
     state.adminSummaryLoading = {};
     state.adminSummaryError = {};
@@ -464,6 +530,9 @@ function setSessionUser(user) {
 
   state.currentUserEmail = user.email || null;
   state.currentUserRole = user.role === "admin" ? "admin" : "user";
+  state.currentUserShareEnabled = user.shareEnabled !== false;
+  state.currentDayNetworkMetrics = null;
+  state.currentDayNetworkMetricsLoading = false;
 }
 
 function applyCurrentUserDataToState(data) {
@@ -556,6 +625,157 @@ function getMonthRevenue(monthKey) {
   return totalRevenue;
 }
 
+async function setCurrentUserSharePreference(shareEnabled) {
+  const payload = await apiRequest("/user/share-preference", {
+    method: "POST",
+    body: { shareEnabled: shareEnabled !== false },
+  });
+  const resolvedShareEnabled = payload?.user?.shareEnabled !== false;
+  state.currentUserShareEnabled = resolvedShareEnabled;
+  return resolvedShareEnabled;
+}
+
+async function handleAdminShareToggle(userEmail, currentShareEnabled, button) {
+  const nextShareEnabled = !currentShareEnabled;
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Salvando...";
+  try {
+    const payload = await apiRequest("/admin/set-sharing", {
+      method: "POST",
+      body: { email: userEmail, shareEnabled: nextShareEnabled },
+    });
+    if (userEmail.toLowerCase() === String(state.currentUserEmail || "").toLowerCase()) {
+      state.currentUserShareEnabled = nextShareEnabled;
+      state.currentDayNetworkMetrics = null;
+      state.currentDayNetworkMetricsLoading = false;
+    }
+    alert(payload.message || `Compartilhamento de ${userEmail} atualizado.`);
+    clearAdminSummaryCache();
+    refreshAdminSummaryForCurrentMonth();
+    renderAll();
+    renderAdminPanel();
+  } catch (err) {
+    alert(err.message || "Não foi possível atualizar o compartilhamento.");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
+async function fetchNetworkDayMetrics(dayKey) {
+  if (!state.currentUserEmail) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey || "")) return;
+
+  state.currentDayNetworkMetricsLoading = true;
+  try {
+    const payload = await apiRequest(`/network/day-metrics?dayKey=${encodeURIComponent(dayKey)}`);
+    state.currentDayNetworkMetricsLoading = false;
+    if (state.selectedDateKey === dayKey) {
+      state.currentDayNetworkMetrics = payload;
+      renderNetworkDayMetrics();
+      renderNetworkDayChart(computeDayMetrics(dayKey));
+    }
+  } catch (err) {
+    state.currentDayNetworkMetricsLoading = false;
+    if (state.selectedDateKey === dayKey) {
+      state.currentDayNetworkMetrics = {
+        dayKey,
+        canViewNetwork: false,
+        reason: err.message || "Não foi possível carregar métricas da rede.",
+      };
+      renderNetworkDayMetrics();
+      renderNetworkDayChart(computeDayMetrics(dayKey));
+    }
+  }
+}
+
+function renderConsultTimeline(dayMetrics) {
+  const timelineEl = document.getElementById("consult-timeline");
+  const feedbackEl = document.getElementById("timeline-feedback");
+  timelineEl.innerHTML = "";
+
+  if (!dayMetrics.records.length) {
+    feedbackEl.textContent = "Sem atendimentos registrados neste dia.";
+    const empty = document.createElement("div");
+    empty.className = "consult-timeline-track";
+    empty.innerHTML = '<p class="metric-hint" style="margin:10px;">Clique em um tipo para registrar.</p>';
+    timelineEl.appendChild(empty);
+    return;
+  }
+
+  feedbackEl.textContent = `${dayMetrics.records.length} registros contabilizados.`;
+  const track = document.createElement("div");
+  track.className = "consult-timeline-track";
+
+  for (const record of dayMetrics.records) {
+    const date = new Date(record.ts);
+    const minutes = date.getHours() * 60 + date.getMinutes();
+    const leftPercent = (minutes / (24 * 60)) * 100;
+    const dot = document.createElement("span");
+    dot.className = `consult-timeline-dot ${record.type}`;
+    dot.style.left = `${leftPercent.toFixed(2)}%`;
+    dot.title = `${formatTime(record.ts)} - ${TYPE_META[record.type].label}`;
+    track.appendChild(dot);
+  }
+
+  timelineEl.appendChild(track);
+}
+
+function renderPauseControl(dayMetrics) {
+  const pauseButton = document.getElementById("toggle-pause-btn");
+  if (dayMetrics.pauseActive) {
+    pauseButton.textContent = "Pausa ativa";
+    pauseButton.classList.add("pause-active");
+  } else {
+    pauseButton.textContent = "Iniciar pausa";
+    pauseButton.classList.remove("pause-active");
+  }
+}
+
+function renderNetworkDayMetrics() {
+  const netConsultsEl = document.getElementById("network-net-consults-per-hour");
+  const netRevenueEl = document.getElementById("network-net-revenue-per-hour");
+  const summaryEl = document.getElementById("network-day-summary");
+  const payload = state.currentDayNetworkMetrics;
+
+  if (state.currentUserShareEnabled === false) {
+    netConsultsEl.textContent = "Indisp.";
+    netRevenueEl.textContent = "Indisp.";
+    summaryEl.textContent =
+      "Você desativou o compartilhamento. Ative para ver métricas das outras contas.";
+    return;
+  }
+
+  if (state.currentDayNetworkMetricsLoading) {
+    netConsultsEl.textContent = "...";
+    netRevenueEl.textContent = "...";
+    summaryEl.textContent = "Carregando métricas das contas ativas...";
+    return;
+  }
+
+  if (!payload) {
+    netConsultsEl.textContent = "Sem base";
+    netRevenueEl.textContent = "Sem base";
+    summaryEl.textContent = "Sem dados compartilhados para este dia.";
+    return;
+  }
+
+  if (!payload.canViewNetwork) {
+    netConsultsEl.textContent = "Indisp.";
+    netRevenueEl.textContent = "Indisp.";
+    summaryEl.textContent =
+      payload.reason || "Ative o compartilhamento para visualizar informações das outras contas.";
+    return;
+  }
+
+  netConsultsEl.textContent = formatRateNumber(payload.averageNetConsultationsPerHour ?? null);
+  netRevenueEl.textContent = formatRateCurrency(payload.averageNetRevenuePerHour ?? null);
+  summaryEl.textContent = `Contas ativas: ${payload.activeAccounts || 0}. Incluídas na média: ${
+    payload.includedAccounts || 0
+  }. Outliers ignorados: ${payload.ignoredOutliers || 0}.`;
+}
+
 async function handleAdminResetPassword(userEmail, button) {
   const newPassword = window.prompt(
     `Nova senha para ${userEmail} (mínimo 6 caracteres):`
@@ -626,27 +846,36 @@ function renderAdminRows(rows) {
 
   if (!Array.isArray(rows) || rows.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="6">Nenhum usuário encontrado.</td>`;
+    tr.innerHTML = `<td colspan="7">Nenhum usuário encontrado.</td>`;
     tbody.appendChild(tr);
     return;
   }
 
   for (const row of rows) {
     const tr = document.createElement("tr");
+    const shareEnabled = row.shareEnabled !== false;
     tr.innerHTML = `
       <td>${row.email}</td>
       <td>${row.role === "admin" ? "Administrador" : "Usuário"}</td>
+      <td>${shareEnabled ? "Sim" : "Não"}</td>
       <td>${row.consults || 0}</td>
       <td>${formatCurrency(Number(row.revenue || 0))}</td>
       <td>${row.activeDays || 0}</td>
       <td>
+        <button type="button" class="ghost day-action-btn admin-share-btn">${
+          shareEnabled ? "Bloquear compartilh." : "Permitir compartilh."
+        }</button>
         <button type="button" class="ghost day-action-btn admin-reset-btn">Redefinir senha</button>
         <button type="button" class="ghost day-action-btn admin-delete-btn">Apagar conta</button>
       </td>
     `;
 
+    const shareButton = tr.querySelector(".admin-share-btn");
     const resetButton = tr.querySelector(".admin-reset-btn");
     const deleteButton = tr.querySelector(".admin-delete-btn");
+    shareButton.addEventListener("click", () =>
+      handleAdminShareToggle(row.email, shareEnabled, shareButton)
+    );
     resetButton.addEventListener("click", () => handleAdminResetPassword(row.email, resetButton));
     deleteButton.addEventListener("click", () => handleAdminDeleteUser(row.email, deleteButton));
 
@@ -693,7 +922,7 @@ function renderAdminPanel() {
   tbody.innerHTML = "";
   const tr = document.createElement("tr");
   const hasError = Boolean(state.adminSummaryError[monthKey]);
-  tr.innerHTML = `<td colspan="6">${
+  tr.innerHTML = `<td colspan="7">${
     hasError ? state.adminSummaryError[monthKey] : "Carregando dados do administrador..."
   }</td>`;
   tbody.appendChild(tr);
@@ -702,7 +931,7 @@ function renderAdminPanel() {
     fetchAdminSummary(monthKey);
   } else {
     const retryTr = document.createElement("tr");
-    retryTr.innerHTML = `<td colspan="6">Altere o mês ou atualize a página para tentar novamente.</td>`;
+    retryTr.innerHTML = `<td colspan="7">Altere o mês ou atualize a página para tentar novamente.</td>`;
     tbody.appendChild(retryTr);
   }
 }
@@ -747,6 +976,90 @@ function getPauseThresholdMinutes() {
 
 function getDayRecords(dayKey) {
   return state.data.days[dayKey] || [];
+}
+
+function getManualPauseEntriesForDay(dayKey) {
+  const raw = state.data.settings?.manualPauses?.[dayKey];
+  return Array.isArray(raw) ? raw : [];
+}
+
+function getActivePause() {
+  const pause = state.data.settings?.activePause;
+  if (!pause || typeof pause !== "object") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(pause.dayKey || ""))) return null;
+  const startTs = Number(pause.startTs);
+  if (!Number.isFinite(startTs)) return null;
+  return { dayKey: pause.dayKey, startTs };
+}
+
+function isPauseActiveForDay(dayKey) {
+  const pause = getActivePause();
+  return Boolean(pause && pause.dayKey === dayKey);
+}
+
+function startPauseNow() {
+  const now = Date.now();
+  const dayKey = toDayKey(new Date(now));
+  if (isPauseActiveForDay(dayKey)) return false;
+  state.data.settings.activePause = { dayKey, startTs: now };
+  return true;
+}
+
+function closePauseAt(dayKey, endTs) {
+  const pause = getActivePause();
+  if (!pause || pause.dayKey !== dayKey) return false;
+  const safeEndTs = Number(endTs);
+  if (!Number.isFinite(safeEndTs)) return false;
+  const startTs = Math.min(pause.startTs, safeEndTs - 1);
+  if (safeEndTs <= startTs) return false;
+
+  const normalizedEntry = normalizePauseEntriesForDay([{ startTs, endTs: safeEndTs }], dayKey);
+  if (!normalizedEntry.length) return false;
+  if (!state.data.settings.manualPauses || typeof state.data.settings.manualPauses !== "object") {
+    state.data.settings.manualPauses = {};
+  }
+  const current = getManualPauseEntriesForDay(dayKey);
+  state.data.settings.manualPauses[dayKey] = [...current, normalizedEntry[0]].sort(
+    (a, b) => a.startTs - b.startTs
+  );
+  state.data.settings.activePause = null;
+  return true;
+}
+
+function togglePauseNow() {
+  const now = Date.now();
+  const dayKey = toDayKey(new Date(now));
+  if (isPauseActiveForDay(dayKey)) return closePauseAt(dayKey, now);
+  return startPauseNow();
+}
+
+function getManualPauseEntriesForMetrics(dayKey, maxEndTs = Number.POSITIVE_INFINITY) {
+  const stored = getManualPauseEntriesForDay(dayKey).filter((entry) => entry.startTs < maxEndTs);
+  const active = getActivePause();
+  if (
+    active &&
+    active.dayKey === dayKey &&
+    Number.isFinite(active.startTs) &&
+    active.startTs < maxEndTs
+  ) {
+    const activeEnd = Math.min(maxEndTs, Date.now());
+    const normalized = normalizePauseEntriesForDay(
+      [{ startTs: active.startTs, endTs: activeEnd }],
+      dayKey
+    );
+    if (normalized.length > 0) stored.push(normalized[0]);
+  }
+  return stored.sort((a, b) => a.startTs - b.startTs);
+}
+
+function getOverlapMinutes(rangeStartTs, rangeEndTs, pauseEntries) {
+  let overlapMs = 0;
+  for (const pause of pauseEntries) {
+    const start = Math.max(rangeStartTs, pause.startTs);
+    const end = Math.min(rangeEndTs, pause.endTs);
+    if (end > start) overlapMs += end - start;
+  }
+  return overlapMs / 60000;
 }
 
 function addRecordAtDateTime(dayKey, time, type) {
@@ -816,13 +1129,35 @@ function computeDayMetrics(dayKey) {
   const total = records.length;
   const revenue = getRevenueFromCounts(counts);
   const pauseThresholdMin = getPauseThresholdMinutes();
-  const intervalsMinutes = getIntervalsMinutes(records);
+  const manualPauseEntries = getManualPauseEntriesForMetrics(dayKey);
+  const intervalsMinutes = [];
+  const pauseIntervalsMinutes = [];
+
+  for (let i = 1; i < records.length; i += 1) {
+    const previousTs = records[i - 1].ts;
+    const currentTs = records[i].ts;
+    const rawIntervalMin = (currentTs - previousTs) / 60000;
+    if (!Number.isFinite(rawIntervalMin) || rawIntervalMin <= 0) continue;
+
+    const overlappedByManualPauseMin = getOverlapMinutes(previousTs, currentTs, manualPauseEntries);
+    const effectiveIntervalMin = Math.max(rawIntervalMin - overlappedByManualPauseMin, 0);
+    if (effectiveIntervalMin <= 0) continue;
+
+    intervalsMinutes.push(effectiveIntervalMin);
+    if (effectiveIntervalMin > pauseThresholdMin) {
+      pauseIntervalsMinutes.push(effectiveIntervalMin);
+    }
+  }
+
   const totalClockHours =
     total > 1 ? (records[records.length - 1].ts - records[0].ts) / MS_HOUR : 0;
 
-  const pauseIntervalsMinutes = intervalsMinutes.filter((gap) => gap > pauseThresholdMin);
   const pauseMinutes = pauseIntervalsMinutes.reduce((sum, gap) => sum + gap, 0);
-  const activeHours = Math.max(totalClockHours - pauseMinutes / 60, 0);
+  const manualPauseMinutes = manualPauseEntries.reduce(
+    (sum, entry) => sum + Math.max((entry.endTs - entry.startTs) / 60000, 0),
+    0
+  );
+  const activeHours = Math.max(totalClockHours - pauseMinutes / 60 - manualPauseMinutes / 60, 0);
 
   const hasAverageSample = total >= MIN_CONSULTS_FOR_AVERAGES;
   const grossRevenuePerHour =
@@ -847,10 +1182,21 @@ function computeDayMetrics(dayKey) {
     const sampleSize = Math.floor(total / 10) * 10;
     if (sampleSize >= 10) {
       const sampleRecords = records.slice(0, sampleSize);
-      const sampleIntervalsMinutes = getIntervalsMinutes(sampleRecords);
-      const samplePauseMinutes = sampleIntervalsMinutes
-        .filter((gap) => gap > pauseThresholdMin)
-        .reduce((sum, gap) => sum + gap, 0);
+      const sampleLastTs = sampleRecords[sampleRecords.length - 1].ts;
+      const samplePauseEntries = getManualPauseEntriesForMetrics(dayKey, sampleLastTs);
+      let samplePauseMinutes = 0;
+      for (let i = 1; i < sampleRecords.length; i += 1) {
+        const previousTs = sampleRecords[i - 1].ts;
+        const currentTs = sampleRecords[i].ts;
+        const rawIntervalMin = (currentTs - previousTs) / 60000;
+        const overlapMin = getOverlapMinutes(previousTs, currentTs, samplePauseEntries);
+        const effectiveIntervalMin = Math.max(rawIntervalMin - overlapMin, 0);
+        if (effectiveIntervalMin > pauseThresholdMin) samplePauseMinutes += effectiveIntervalMin;
+      }
+      const sampleManualPauseMinutes = samplePauseEntries.reduce(
+        (sum, entry) => sum + Math.max((entry.endTs - entry.startTs) / 60000, 0),
+        0
+      );
       const sampleRevenue = sampleRecords.reduce(
         (sum, record) => sum + TYPE_META[record.type].price,
         0
@@ -859,7 +1205,10 @@ function computeDayMetrics(dayKey) {
         sampleRecords.length > 1
           ? (sampleRecords[sampleRecords.length - 1].ts - sampleRecords[0].ts) / MS_HOUR
           : 0;
-      const sampleActiveHours = Math.max(sampleClockHours - samplePauseMinutes / 60, 0);
+      const sampleActiveHours = Math.max(
+        sampleClockHours - samplePauseMinutes / 60 - sampleManualPauseMinutes / 60,
+        0
+      );
       if (sampleActiveHours > 0) {
         const averageNow = sampleRevenue / sampleActiveHours;
         estimatedEndOfShift = averageNow * getTargetHours();
@@ -885,6 +1234,9 @@ function computeDayMetrics(dayKey) {
     pauseCount: pauseIntervalsMinutes.length,
     pauseMinutes,
     longestPauseMinutes: pauseIntervalsMinutes.length ? Math.max(...pauseIntervalsMinutes) : 0,
+    manualPauseCount: manualPauseEntries.length,
+    manualPauseMinutes,
+    pauseActive: isPauseActiveForDay(dayKey),
     hasAverageSample,
     estimatedEndOfShift,
     estimateSampleSize,
@@ -913,10 +1265,21 @@ function computeMonthMetrics(monthKey) {
     const dayClockHours = (records[records.length - 1].ts - records[0].ts) / MS_HOUR;
     totalClockHours += dayClockHours;
 
-    const dayPauseMinutes = getIntervalsMinutes(records)
-      .filter((gap) => gap > pauseThresholdMin)
-      .reduce((sum, gap) => sum + gap, 0);
-    activeHours += Math.max(dayClockHours - dayPauseMinutes / 60, 0);
+    const dayManualPauseEntries = getManualPauseEntriesForMetrics(dayKey);
+    let dayPauseMinutes = 0;
+    for (let i = 1; i < records.length; i += 1) {
+      const previousTs = records[i - 1].ts;
+      const currentTs = records[i].ts;
+      const rawIntervalMin = (currentTs - previousTs) / 60000;
+      const overlapMin = getOverlapMinutes(previousTs, currentTs, dayManualPauseEntries);
+      const effectiveIntervalMin = Math.max(rawIntervalMin - overlapMin, 0);
+      if (effectiveIntervalMin > pauseThresholdMin) dayPauseMinutes += effectiveIntervalMin;
+    }
+    const dayManualPauseMinutes = dayManualPauseEntries.reduce(
+      (sum, entry) => sum + Math.max((entry.endTs - entry.startTs) / 60000, 0),
+      0
+    );
+    activeHours += Math.max(dayClockHours - dayPauseMinutes / 60 - dayManualPauseMinutes / 60, 0);
   }
 
   const revenue = getRevenueFromCounts(counts);
@@ -1150,6 +1513,9 @@ function applyAdminTodayFileImport() {
 function registerConsult(type) {
   const now = Date.now();
   const dayKey = toDayKey(new Date(now));
+  if (isPauseActiveForDay(dayKey)) {
+    closePauseAt(dayKey, now);
+  }
   if (!state.data.days[dayKey]) state.data.days[dayKey] = [];
   state.data.days[dayKey].push({ id: createId(), type, ts: now });
   state.data.days[dayKey].sort((a, b) => a.ts - b.ts);
@@ -1208,6 +1574,7 @@ function renderMetrics(dayMetrics) {
     estimationEl.textContent = "Dia encerrado";
   }
 
+  renderPauseControl(dayMetrics);
   document.getElementById(
     "type-breakdown"
   ).textContent = TYPE_KEYS.map(
@@ -1291,15 +1658,29 @@ function renderIntervalAndPauseStats(dayMetrics) {
     <li>P25-P75 = faixa onde estão 50% dos intervalos entre atendimentos.</li>
   `;
 
+  const manualLines = `
+    <li>Pausas manuais: ${dayMetrics.manualPauseCount}</li>
+    <li>Duração total de pausas manuais: ${formatMinutes(dayMetrics.manualPauseMinutes)}</li>
+    ${
+      dayMetrics.pauseActive
+        ? "<li>Pausa em andamento: ativa (encerra automaticamente ao registrar atendimento).</li>"
+        : ""
+    }
+  `;
+
   if (dayMetrics.pauseCount === 0) {
-    pauseList.innerHTML = `<li>Sem pausas acima de ${dayMetrics.pauseThresholdMin} min.</li>`;
+    pauseList.innerHTML = `
+      <li>Sem pausas automáticas acima de ${dayMetrics.pauseThresholdMin} min.</li>
+      ${manualLines}
+    `;
     return;
   }
 
   pauseList.innerHTML = `
-    <li>Pausas acima de ${dayMetrics.pauseThresholdMin} min: ${dayMetrics.pauseCount}</li>
-    <li>Duração total de pausas: ${formatMinutes(dayMetrics.pauseMinutes)}</li>
-    <li>Maior pausa: ${formatMinutes(dayMetrics.longestPauseMinutes)}</li>
+    <li>Pausas automáticas acima de ${dayMetrics.pauseThresholdMin} min: ${dayMetrics.pauseCount}</li>
+    <li>Duração total de pausas automáticas: ${formatMinutes(dayMetrics.pauseMinutes)}</li>
+    <li>Maior pausa automática: ${formatMinutes(dayMetrics.longestPauseMinutes)}</li>
+    ${manualLines}
   `;
 }
 
@@ -1465,8 +1846,10 @@ function getHourlyEvolutionSeries(dayKey) {
 
   const firstTs = records[0].ts;
   const pauseThresholdMin = getPauseThresholdMinutes();
+  const manualPauseEntries = getManualPauseEntriesForMetrics(dayKey);
   let cumulativeRevenue = 0;
   let pauseMinutesAcc = 0;
+  let manualPauseMinutesAcc = 0;
   const labels = [];
   const grossRevenuePerHour = [];
   const grossConsultationsPerHour = [];
@@ -1477,11 +1860,15 @@ function getHourlyEvolutionSeries(dayKey) {
     const record = records[index];
     cumulativeRevenue += TYPE_META[record.type].price;
     if (index > 0) {
-      const intervalMin = (records[index].ts - records[index - 1].ts) / 60000;
-      if (intervalMin > pauseThresholdMin) pauseMinutesAcc += intervalMin;
+      const previousTs = records[index - 1].ts;
+      const intervalMin = (records[index].ts - previousTs) / 60000;
+      const manualOverlapMin = getOverlapMinutes(previousTs, record.ts, manualPauseEntries);
+      manualPauseMinutesAcc += manualOverlapMin;
+      const effectiveIntervalMin = Math.max(intervalMin - manualOverlapMin, 0);
+      if (effectiveIntervalMin > pauseThresholdMin) pauseMinutesAcc += effectiveIntervalMin;
     }
     const clockHours = index > 0 ? (record.ts - firstTs) / MS_HOUR : 0;
-    const activeHours = Math.max(clockHours - pauseMinutesAcc / 60, 0);
+    const activeHours = Math.max(clockHours - pauseMinutesAcc / 60 - manualPauseMinutesAcc / 60, 0);
     const enoughSample = index + 1 >= MIN_CONSULTS_FOR_AVERAGES;
 
     labels.push(formatTime(record.ts));
@@ -1625,6 +2012,58 @@ function closeHourlyModal() {
   destroyChartIfExists("hourly");
 }
 
+function renderNetworkDayChart(dayMetrics) {
+  destroyChartIfExists("networkDay");
+
+  const payload = state.currentDayNetworkMetrics;
+  const ctx = document.getElementById("network-day-chart");
+  if (!ctx) return;
+
+  const ownNetConsults = dayMetrics.netConsultationsPerHour;
+  const ownNetRevenue = dayMetrics.netRevenuePerHour;
+  const networkNetConsults = payload?.canViewNetwork
+    ? payload.averageNetConsultationsPerHour ?? null
+    : null;
+  const networkNetRevenue = payload?.canViewNetwork ? payload.averageNetRevenuePerHour ?? null : null;
+
+  const hasAnyData = [ownNetConsults, ownNetRevenue, networkNetConsults, networkNetRevenue].some(
+    (value) => value !== null
+  );
+  if (!hasAnyData) return;
+
+  state.charts.networkDay = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: ["Atend./h líquida", "R$/h líquida"],
+      datasets: [
+        {
+          label: "Sua conta",
+          data: [ownNetConsults, ownNetRevenue],
+          backgroundColor: "#0f766e99",
+          borderColor: "#0f766e",
+          borderWidth: 1,
+        },
+        {
+          label: "Contas ativas",
+          data: [networkNetConsults, networkNetRevenue],
+          backgroundColor: "#7c3aed99",
+          borderColor: "#7c3aed",
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      plugins: { legend: { position: "bottom" } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: "Valor da métrica" },
+        },
+      },
+    },
+  });
+}
+
 function renderCharts(dayMetrics) {
   const dayCtx = document.getElementById("day-chart");
   const weekCtx = document.getElementById("week-chart");
@@ -1633,6 +2072,7 @@ function renderCharts(dayMetrics) {
   destroyChartIfExists("day");
   destroyChartIfExists("week");
   destroyChartIfExists("month");
+  destroyChartIfExists("networkDay");
 
   state.charts.day = new Chart(dayCtx, {
     type: "doughnut",
@@ -1729,6 +2169,8 @@ function renderCharts(dayMetrics) {
       },
     },
   });
+
+  renderNetworkDayChart(dayMetrics);
 }
 
 function getHeatClass(revenue, maxRevenue) {
@@ -1800,7 +2242,9 @@ function renderAll() {
   }${isAdminUser() ? " (admin)" : ""}`;
   const metrics = computeDayMetrics(state.selectedDateKey);
   renderMetrics(metrics);
+  renderConsultTimeline(metrics);
   renderMonthGoalMetrics();
+  renderNetworkDayMetrics();
   renderAdminPanel();
   renderIntervalAndPauseStats(metrics);
   renderDayList(metrics.records);
@@ -1812,9 +2256,20 @@ function renderAll() {
   const monthKey = monthKeyFromDayKey(state.selectedDateKey);
   const monthGoal = getMonthlyGoal(monthKey);
   document.getElementById("monthly-target").value = monthGoal === null ? "" : String(monthGoal);
+  document.getElementById("share-data-toggle").checked = state.currentUserShareEnabled !== false;
   document.getElementById("manual-date").value = state.selectedDateKey;
   const manualTimeInput = document.getElementById("manual-time");
   if (!manualTimeInput.value) manualTimeInput.value = toTimeInputValue(Date.now());
+
+  const cachedDayKey = state.currentDayNetworkMetrics?.dayKey;
+  if (
+    cachedDayKey !== state.selectedDateKey &&
+    !state.currentDayNetworkMetricsLoading &&
+    state.currentUserEmail &&
+    state.currentUserShareEnabled !== false
+  ) {
+    fetchNetworkDayMetrics(state.selectedDateKey);
+  }
 }
 
 function completeLoginFlow() {
@@ -1893,6 +2348,13 @@ function bindEvents() {
 
   document.getElementById("undo-btn").addEventListener("click", undoLastConsultFromSelectedDay);
 
+  document.getElementById("toggle-pause-btn").addEventListener("click", () => {
+    if (!togglePauseNow()) return;
+    saveData();
+    refreshAdminSummaryForCurrentMonth();
+    renderAll();
+  });
+
   document.getElementById("prev-month").addEventListener("click", () => {
     state.calendarCursor = new Date(
       state.calendarCursor.getFullYear(),
@@ -1933,6 +2395,25 @@ function bindEvents() {
     saveData();
     refreshAdminSummaryForCurrentMonth();
     renderAll();
+  });
+
+  document.getElementById("share-data-toggle").addEventListener("change", async (event) => {
+    const requestedShareEnabled = event.target.checked;
+    const previousValue = state.currentUserShareEnabled !== false;
+    event.target.disabled = true;
+    try {
+      const resolved = await setCurrentUserSharePreference(requestedShareEnabled);
+      state.currentUserShareEnabled = resolved;
+      state.currentDayNetworkMetrics = null;
+      state.currentDayNetworkMetricsLoading = false;
+      renderAll();
+    } catch (err) {
+      state.currentUserShareEnabled = previousValue;
+      event.target.checked = previousValue;
+      alert(err.message || "Não foi possível atualizar sua preferência de compartilhamento.");
+    } finally {
+      event.target.disabled = false;
+    }
   });
 
   document.getElementById("monthly-target").addEventListener("change", (event) => {
