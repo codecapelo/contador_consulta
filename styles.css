@@ -523,6 +523,20 @@ button:active {
   grid-template-columns: 1fr 1fr;
 }
 
+.network-day-charts {
+  margin-top: 0.45rem;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.network-day-chart-card {
+  background: #f0f5f2;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.45rem 0.55rem 0.25rem;
+}
+
 .time-block {
   background: #f0f5f2;
   border: 1px solid var(--border);
@@ -890,6 +904,10 @@ button:active {
   }
 
   .network-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .network-day-charts {
     grid-template-columns: 1fr;
   }
 

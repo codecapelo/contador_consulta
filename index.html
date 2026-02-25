@@ -90,13 +90,7 @@
             <p id="timeline-feedback" class="metric-hint"></p>
           </div>
           <div id="consult-timeline" class="consult-timeline"></div>
-          <div class="consult-timeline-axis">
-            <span>00h</span>
-            <span>06h</span>
-            <span>12h</span>
-            <span>18h</span>
-            <span>24h</span>
-          </div>
+          <div id="consult-timeline-axis" class="consult-timeline-axis"></div>
         </section>
         <div class="btn-grid">
           <button class="type-btn adulto" data-type="adulto">Adulto (+R$ 15)</button>
@@ -248,7 +242,16 @@
           </div>
           <canvas id="day-chart" height="180"></canvas>
           <h3>Média das contas ativas (dia)</h3>
-          <canvas id="network-day-chart" height="120"></canvas>
+          <div class="network-day-charts">
+            <article class="network-day-chart-card">
+              <p class="metric-sub-label">Atend./h líquida</p>
+              <canvas id="network-day-consults-chart" height="120"></canvas>
+            </article>
+            <article class="network-day-chart-card">
+              <p class="metric-sub-label">R$/h líquida</p>
+              <canvas id="network-day-revenue-chart" height="120"></canvas>
+            </article>
+          </div>
           <h3>Intervalos e pausas</h3>
           <ul id="interval-stats" class="stats-list"></ul>
           <ul id="pause-stats" class="stats-list"></ul>

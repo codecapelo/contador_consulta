@@ -3,6 +3,8 @@ const LEGACY_MIGRATION_PREFIX = "consultas_legacy_migrated_v2_";
 const MS_HOUR = 60 * 60 * 1000;
 const DEFAULT_PAUSE_THRESHOLD_MIN = 20;
 const MIN_CONSULTS_FOR_AVERAGES = 5;
+const TIMELINE_WINDOW_HOURS = 4;
+const TIMELINE_AXIS_TICKS = 5;
 
 const TYPE_META = {
   adulto: { label: "Adulto", price: 15, color: "#2f855a" },
@@ -201,7 +203,8 @@ const state = {
     week: null,
     month: null,
     hourly: null,
-    networkDay: null,
+    networkDayConsults: null,
+    networkDayRevenue: null,
   },
 };
 
@@ -690,10 +693,55 @@ async function fetchNetworkDayMetrics(dayKey) {
   }
 }
 
+function renderTimelineAxis(windowStartTs, windowEndTs) {
+  const axisEl = document.getElementById("consult-timeline-axis");
+  if (!axisEl) return;
+  axisEl.innerHTML = "";
+
+  const spanMs = Math.max(windowEndTs - windowStartTs, 1);
+  for (let index = 0; index < TIMELINE_AXIS_TICKS; index += 1) {
+    const tick = document.createElement("span");
+    const tickTs =
+      windowStartTs + (spanMs * index) / Math.max(TIMELINE_AXIS_TICKS - 1, 1);
+    tick.textContent = formatTime(tickTs);
+    axisEl.appendChild(tick);
+  }
+}
+
+function getTimelineWindow(dayKey, records) {
+  const { startTs: dayStartTs, endTs: dayEndTs } = dayBoundsFromKey(dayKey);
+  const windowMs = TIMELINE_WINDOW_HOURS * MS_HOUR;
+  const referenceTs = records.length
+    ? records[records.length - 1].ts
+    : isToday(dayKey)
+      ? Date.now()
+      : dayStartTs;
+
+  let windowEndTs = Math.min(Math.max(referenceTs, dayStartTs), dayEndTs);
+  let windowStartTs = windowEndTs - windowMs;
+
+  if (windowStartTs < dayStartTs) {
+    windowStartTs = dayStartTs;
+    windowEndTs = Math.min(dayEndTs, dayStartTs + windowMs);
+  }
+
+  if (windowEndTs <= windowStartTs) {
+    windowEndTs = Math.min(dayEndTs, windowStartTs + 60000);
+  }
+
+  return { windowStartTs, windowEndTs };
+}
+
 function renderConsultTimeline(dayMetrics) {
   const timelineEl = document.getElementById("consult-timeline");
   const feedbackEl = document.getElementById("timeline-feedback");
+  const { windowStartTs, windowEndTs } = getTimelineWindow(state.selectedDateKey, dayMetrics.records);
+  const visibleRecords = dayMetrics.records.filter(
+    (record) => record.ts >= windowStartTs && record.ts <= windowEndTs
+  );
+
   timelineEl.innerHTML = "";
+  renderTimelineAxis(windowStartTs, windowEndTs);
 
   if (!dayMetrics.records.length) {
     feedbackEl.textContent = "Sem atendimentos registrados neste dia.";
@@ -704,14 +752,22 @@ function renderConsultTimeline(dayMetrics) {
     return;
   }
 
-  feedbackEl.textContent = `${dayMetrics.records.length} registros contabilizados.`;
+  if (!visibleRecords.length) {
+    feedbackEl.textContent = `Nenhum registro nas últimas ${TIMELINE_WINDOW_HOURS}h. Total do dia: ${dayMetrics.records.length}.`;
+    const empty = document.createElement("div");
+    empty.className = "consult-timeline-track";
+    empty.innerHTML = '<p class="metric-hint" style="margin:10px;">Sem atendimentos na janela atual.</p>';
+    timelineEl.appendChild(empty);
+    return;
+  }
+
+  feedbackEl.textContent = `${visibleRecords.length} de ${dayMetrics.records.length} registros nas últimas ${TIMELINE_WINDOW_HOURS}h.`;
   const track = document.createElement("div");
   track.className = "consult-timeline-track";
+  const spanMs = Math.max(windowEndTs - windowStartTs, 1);
 
-  for (const record of dayMetrics.records) {
-    const date = new Date(record.ts);
-    const minutes = date.getHours() * 60 + date.getMinutes();
-    const leftPercent = (minutes / (24 * 60)) * 100;
+  for (const record of visibleRecords) {
+    const leftPercent = ((record.ts - windowStartTs) / spanMs) * 100;
     const dot = document.createElement("span");
     dot.className = `consult-timeline-dot ${record.type}`;
     dot.style.left = `${leftPercent.toFixed(2)}%`;
@@ -2013,11 +2069,13 @@ function closeHourlyModal() {
 }
 
 function renderNetworkDayChart(dayMetrics) {
-  destroyChartIfExists("networkDay");
+  destroyChartIfExists("networkDayConsults");
+  destroyChartIfExists("networkDayRevenue");
 
   const payload = state.currentDayNetworkMetrics;
-  const ctx = document.getElementById("network-day-chart");
-  if (!ctx) return;
+  const consultsCtx = document.getElementById("network-day-consults-chart");
+  const revenueCtx = document.getElementById("network-day-revenue-chart");
+  if (!consultsCtx || !revenueCtx) return;
 
   const ownNetConsults = dayMetrics.netConsultationsPerHour;
   const ownNetRevenue = dayMetrics.netRevenuePerHour;
@@ -2026,42 +2084,49 @@ function renderNetworkDayChart(dayMetrics) {
     : null;
   const networkNetRevenue = payload?.canViewNetwork ? payload.averageNetRevenuePerHour ?? null : null;
 
-  const hasAnyData = [ownNetConsults, ownNetRevenue, networkNetConsults, networkNetRevenue].some(
-    (value) => value !== null
-  );
-  if (!hasAnyData) return;
-
-  state.charts.networkDay = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: ["Atend./h líquida", "R$/h líquida"],
-      datasets: [
-        {
-          label: "Sua conta",
-          data: [ownNetConsults, ownNetRevenue],
-          backgroundColor: "#0f766e99",
-          borderColor: "#0f766e",
-          borderWidth: 1,
-        },
-        {
-          label: "Contas ativas",
-          data: [networkNetConsults, networkNetRevenue],
-          backgroundColor: "#7c3aed99",
-          borderColor: "#7c3aed",
-          borderWidth: 1,
-        },
-      ],
-    },
-    options: {
-      plugins: { legend: { position: "bottom" } },
-      scales: {
-        y: {
-          beginAtZero: true,
-          title: { display: true, text: "Valor da métrica" },
+  const renderSingleMetricChart = (ctx, chartKey, yAxisTitle, ownValue, networkValue) => {
+    if (ownValue === null && networkValue === null) return;
+    state.charts[chartKey] = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: ["Sua conta", "Contas ativas"],
+        datasets: [
+          {
+            label: yAxisTitle,
+            data: [ownValue, networkValue],
+            backgroundColor: ["#0f766e99", "#7c3aed99"],
+            borderColor: ["#0f766e", "#7c3aed"],
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: yAxisTitle },
+          },
         },
       },
-    },
-  });
+    });
+  };
+
+  renderSingleMetricChart(
+    consultsCtx,
+    "networkDayConsults",
+    "Atendimentos por hora (líquida)",
+    ownNetConsults,
+    networkNetConsults
+  );
+
+  renderSingleMetricChart(
+    revenueCtx,
+    "networkDayRevenue",
+    "R$ por hora (líquida)",
+    ownNetRevenue,
+    networkNetRevenue
+  );
 }
 
 function renderCharts(dayMetrics) {
@@ -2072,7 +2137,8 @@ function renderCharts(dayMetrics) {
   destroyChartIfExists("day");
   destroyChartIfExists("week");
   destroyChartIfExists("month");
-  destroyChartIfExists("networkDay");
+  destroyChartIfExists("networkDayConsults");
+  destroyChartIfExists("networkDayRevenue");
 
   state.charts.day = new Chart(dayCtx, {
     type: "doughnut",
